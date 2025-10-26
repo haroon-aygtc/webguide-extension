@@ -9,7 +9,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -24,9 +24,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_end"
     }
   ],
@@ -37,8 +43,15 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["assistant-ui.html"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "assistant-ui.html"
+      ],
+      "matches": [
+        "https://*/*"
+      ]
     }
+  ],
+  "optional_permissions": [
+    "<all_urls>"
   ]
 }

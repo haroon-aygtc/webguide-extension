@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAIService } from '@/lib/ai-service';
+import { getAIKey } from '@/lib/ai-config';
+import { getApiKeyFromRequest, validateServiceApiKey } from '@/lib/auth';
+import { allowRequest } from '@/lib/rateLimiter';
+import { incr } from '@/lib/metrics';
+import logger from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,13 +17,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_AI_API_KEY;
-    
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'AI service not configured' },
-        { status: 500 }
-      );
+    const headerKey = request.headers.get('x-api-key');
+    if (!validateServiceApiKey(headerKey)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const limiterKey = headerKey || 'unknown';
+    if (!allowRequest(limiterKey)) {
+      return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+    }
+
+    incr('requests_translate');
+
+    let apiKey: string;
+    try {
+      apiKey = getAIKey();
+    } catch (e: any) {
+      logger.error('AI key missing: %s', e?.message ?? e);
+      return NextResponse.json({ error: e?.message ?? 'AI service not configured' }, { status: 500 });
     }
 
     const aiService = createAIService(apiKey);

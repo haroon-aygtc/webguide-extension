@@ -1,4 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { z } from 'zod';
+import logger from './logger';
+import { incr } from './metrics';
 
 export class AIService {
   private genAI: GoogleGenerativeAI | null = null;
@@ -29,7 +32,7 @@ export class AIService {
     }
 
     const model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
+
     const prompt = `Analyze this HTML and identify all interactive elements, forms, and their purposes. Return JSON with elements and formFields arrays.
 
 HTML:
@@ -41,17 +44,37 @@ Return format:
   "formFields": [{"name": "email", "type": "email", "required": true, "validation": "Valid email required", "helpText": "Enter your email address"}]
 }`;
 
+    incr('ai_calls');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
-    
+
+    const schema = z.object({
+      elements: z.array(z.object({
+        type: z.string(),
+        selector: z.string(),
+        purpose: z.string(),
+        helpText: z.string(),
+      })),
+      formFields: z.array(z.object({
+        name: z.string(),
+        type: z.string(),
+        required: z.boolean(),
+        validation: z.string(),
+        helpText: z.string(),
+      })),
+    });
+
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
+        const validated = schema.parse(parsed);
+        return validated;
       }
-    } catch (e) {
-      console.error('Failed to parse AI response', e);
+      logger.warn('analyzePageStructure: no JSON found in AI response');
+    } catch (e: any) {
+      logger.error({ err: e }, 'Failed to parse/validate AI response');
     }
 
     return { elements: [], formFields: [] };
@@ -63,11 +86,12 @@ Return format:
     }
 
     const model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
+
     const prompt = `Translate the following text to ${targetLanguage}. Return only the translation, no explanations:
 
 ${text}`;
 
+    incr('ai_calls');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text().trim();
@@ -83,7 +107,7 @@ ${text}`;
     }
 
     const model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
+
     const prompt = `User voice command: "${command}"
 Page context: ${pageContext.substring(0, 1000)}
 
@@ -94,17 +118,27 @@ Determine the action to take. Return JSON:
   "response": "Natural language response to user"
 }`;
 
+    incr('ai_calls');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
-    
+
+    const schema = z.object({
+      action: z.string(),
+      target: z.string().optional(),
+      response: z.string(),
+    });
+
     try {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
+        const validated = schema.parse(parsed);
+        return validated;
       }
-    } catch (e) {
-      console.error('Failed to parse AI response', e);
+      logger.warn('processVoiceCommand: no JSON found in AI response');
+    } catch (e: any) {
+      logger.error({ err: e }, 'Failed to parse/validate AI response');
     }
 
     return {
@@ -119,7 +153,7 @@ Determine the action to take. Return JSON:
     }
 
     const model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
+
     const prompt = `Generate helpful guidance for a form field:
 Field name: ${fieldName}
 Field type: ${fieldType}
@@ -127,6 +161,7 @@ Context: ${context}
 
 Provide a brief, helpful explanation (1-2 sentences) about what to enter.`;
 
+    incr('ai_calls');
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text().trim();
